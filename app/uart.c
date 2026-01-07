@@ -163,6 +163,7 @@ typedef struct {
         uint8_t RxToneCode;
         uint8_t TxToneType;
         uint8_t TxToneCode;
+        uint8_t Power;
     } __attribute__((packed)) Data;
 } __attribute__((packed)) CMD_0830_t;
 
@@ -185,6 +186,7 @@ typedef struct {
         uint8_t RxToneCode;
         uint8_t TxToneType;
         uint8_t TxToneCode;
+        uint8_t Power;
     } __attribute__((packed)) Data;
 } __attribute__((packed)) REPLY_0831_t;
 
@@ -194,6 +196,20 @@ typedef struct {
         uint8_t PttState;
     } __attribute__((packed)) Data;
 } __attribute__((packed)) CMD_0840_t;
+
+typedef struct {
+    Header_t Header;
+    struct {
+        uint8_t Channel; // 0 or 1
+    } __attribute__((packed)) Data;
+} __attribute__((packed)) CMD_0850_t;
+
+typedef struct {
+    Header_t Header;
+    struct {
+        uint8_t Channel;
+    } __attribute__((packed)) Data;
+} __attribute__((packed)) REPLY_0851_t;
 #endif
 
 #ifdef ENABLE_BLOCK
@@ -715,6 +731,8 @@ static void CMD_0830(const uint8_t *pBuffer) {
     gEeprom.VfoInfo[ch].TX_OFFSET_FREQUENCY = pCmd->Data.TxOffsetFreq / 10;
     
     gEeprom.VfoInfo[ch].CHANNEL_BANDWIDTH = pCmd->Data.Bandwidth;
+
+    gEeprom.VfoInfo[ch].OUTPUT_POWER = pCmd->Data.Power;
     
     // Update Band and Squelch settings for the new frequency
     gEeprom.VfoInfo[ch].Band = FREQUENCY_GetBand(gEeprom.VfoInfo[ch].freq_config_RX.Frequency);
@@ -749,6 +767,7 @@ static void CMD_0831(const uint8_t *pBuffer) {
     Reply.Data.TxOffsetFreq = gEeprom.VfoInfo[ch].TX_OFFSET_FREQUENCY * 10;
     
     Reply.Data.Bandwidth = gEeprom.VfoInfo[ch].CHANNEL_BANDWIDTH;
+    Reply.Data.Power = gEeprom.VfoInfo[ch].OUTPUT_POWER;
     
     SendReply(&Reply, sizeof(Reply));
 }
@@ -775,6 +794,33 @@ static void CMD_0840(const uint8_t *pBuffer) {
             gUpdateStatus = true;
         }
     }
+}
+
+static void CMD_0850(const uint8_t *pBuffer) {
+    const CMD_0850_t *pCmd = (const CMD_0850_t *) pBuffer;
+    uint8_t ch = pCmd->Data.Channel;
+    if (ch > 1) return;
+    
+    gEeprom.TX_VFO = ch;
+    // Update RX_VFO logic based on DualWatch/CrossBand settings
+    RADIO_SelectVfos();
+    
+    // Apply changes
+    RADIO_SetupRegisters(true);
+    
+    // Update UI
+    gUpdateDisplay = true;
+    gUpdateStatus = true;
+}
+
+static void CMD_0851(const uint8_t *pBuffer) {
+    REPLY_0851_t Reply;
+    
+    Reply.Header.ID = 0x0852;
+    Reply.Header.Size = sizeof(Reply.Data);
+    Reply.Data.Channel = gEeprom.TX_VFO; // Return the Main VFO (TX)
+    
+    SendReply(&Reply, sizeof(Reply));
 }
 #endif
 
@@ -818,6 +864,12 @@ void UART_HandleCommand(void) {
             break;
         case 0x0840:
             CMD_0840(UART_Command.Buffer);
+            break;
+        case 0x0850:
+            CMD_0850(UART_Command.Buffer);
+            break;
+        case 0x0851:
+            CMD_0851(UART_Command.Buffer);
             break;
 #endif
         case 0x0514:

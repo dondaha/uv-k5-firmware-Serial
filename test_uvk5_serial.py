@@ -183,12 +183,12 @@ class UVK5Client:
             
         return False
 
-    def set_channel(self, channel, freq_hz, tx_off_dir, tx_off_freq, bw, rx_tone_type, rx_tone_code, tx_tone_type, tx_tone_code):
-        print(f"Setting Channel {channel} to {freq_hz/1000000} MHz...")
-        # Struct: B I B I B B B B B (15 bytes)
-        payload = struct.pack('<BIBIBBBBB', 
+    def set_channel(self, channel, freq_hz, tx_off_dir, tx_off_freq, bw, rx_tone_type, rx_tone_code, tx_tone_type, tx_tone_code, power=0):
+        print(f"Setting Channel {channel} to {freq_hz/1000000} MHz, Power={power}...")
+        # Struct: B I B I B B B B B B (16 bytes)
+        payload = struct.pack('<BIBIBBBBBB', 
             channel, freq_hz, tx_off_dir, tx_off_freq, bw,
-            rx_tone_type, rx_tone_code, tx_tone_type, tx_tone_code
+            rx_tone_type, rx_tone_code, tx_tone_type, tx_tone_code, power
         )
         self.send_command(0x0830, payload)
         # No specific response for set command? Protocol says no. 
@@ -204,11 +204,12 @@ class UVK5Client:
             cmd_id, data = resp
             if cmd_id == 0x0832:
                 # Parse config
-                ch, freq, off_dir, off_val, bw, rx_type, rx_code, tx_type, tx_code = struct.unpack('<BIBIBBBBB', data)
+                ch, freq, off_dir, off_val, bw, rx_type, rx_code, tx_type, tx_code, power = struct.unpack('<BIBIBBBBBB', data)
                 print(f"  > Channel: {ch}")
                 print(f"  > Freq:    {freq/1000000:.4f} MHz")
                 print(f"  > Offset:  {'+' if off_dir==1 else '-' if off_dir==2 else 'OFF'} {off_val/1000} kHz")
                 print(f"  > BW:      {'Narrow' if bw else 'Wide'}")
+                print(f"  > Power:   {'Low' if power==0 else 'Mid' if power==1 else 'High' if power==2 else str(power)}")
                 print(f"  > RxTone:  Type={rx_type} Code={rx_code}")
                 return freq
             else:
@@ -221,6 +222,26 @@ class UVK5Client:
         print(f"Setting PTT {'ON' if on else 'OFF'}...")
         payload = struct.pack('<B', 1 if on else 0)
         self.send_command(0x0840, payload)
+
+    def set_active_channel(self, channel):
+        print(f"Setting Active Channel to {channel}...")
+        payload = struct.pack('<B', channel)
+        self.send_command(0x0850, payload)
+
+    def get_active_channel(self):
+        print("Reading Active Channel...")
+        self.send_command(0x0851, b'')
+        
+        resp = self.read_response()
+        if resp:
+            cmd_id, data = resp
+            if cmd_id == 0x0852:
+                ch = struct.unpack('<B', data)[0]
+                print(f"  > Active Channel: {ch}")
+                return ch
+            else:
+                print(f"Unexpected response ID: {hex(cmd_id)}")
+        return None
 
 
 # --- MAIN TEST ---
@@ -250,7 +271,8 @@ if __name__ == "__main__":
             tx_off_freq=5000000, 
             bw=0, # Wide
             rx_tone_type=0, rx_tone_code=0,
-            tx_tone_type=0, tx_tone_code=0
+            tx_tone_type=0, tx_tone_code=0,
+            power=2 # High
         )
         time.sleep(0.5)
         
@@ -272,13 +294,23 @@ if __name__ == "__main__":
             tx_off_freq=0, 
             bw=0, # Wide
             rx_tone_type=0, rx_tone_code=0,
-            tx_tone_type=0, tx_tone_code=0
+            tx_tone_type=0, tx_tone_code=0,
+            power=0 # Low
         )
         time.sleep(0.5)
         
         # 5. Read back Channel B
         freq_b = client.get_channel(1)
         
+        time.sleep(1)
+        
+        # Ensure we are on Channel A before PTT test
+        print("Switching to Channel A for PTT test...")
+        client.set_active_channel(1)
+        active_ch = client.get_active_channel()
+        if active_ch != 1:
+             print("[WARN] Failed to switch to Channel A?")
+
         time.sleep(1)
         
         # 6. Test PTT
