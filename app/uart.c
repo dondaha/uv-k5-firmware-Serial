@@ -149,6 +149,53 @@ typedef struct {
     Header_t Header;
     uint32_t Response[4];
 } CMD_052D_t;
+
+#ifdef ENABLE_SERIAL_RC
+typedef struct {
+    Header_t Header;
+    struct {
+        uint8_t Channel; // 0 or 1
+        uint32_t Frequency;
+        uint8_t TxOffsetDir;
+        uint32_t TxOffsetFreq;
+        uint8_t Bandwidth; 
+        uint8_t RxToneType;
+        uint8_t RxToneCode;
+        uint8_t TxToneType;
+        uint8_t TxToneCode;
+    } __attribute__((packed)) Data;
+} __attribute__((packed)) CMD_0830_t;
+
+typedef struct {
+    Header_t Header;
+    struct {
+        uint8_t Channel;
+    } __attribute__((packed)) Data;
+} __attribute__((packed)) CMD_0831_t;
+
+typedef struct {
+    Header_t Header;
+    struct {
+        uint8_t Channel;
+        uint32_t Frequency;
+        uint8_t TxOffsetDir;
+        uint32_t TxOffsetFreq;
+        uint8_t Bandwidth; 
+        uint8_t RxToneType;
+        uint8_t RxToneCode;
+        uint8_t TxToneType;
+        uint8_t TxToneCode;
+    } __attribute__((packed)) Data;
+} __attribute__((packed)) REPLY_0831_t;
+
+typedef struct {
+    Header_t Header;
+    struct {
+        uint8_t PttState;
+    } __attribute__((packed)) Data;
+} __attribute__((packed)) CMD_0840_t;
+#endif
+
 #ifdef ENABLE_BLOCK
 typedef struct {
     Header_t Header;
@@ -649,6 +696,88 @@ static void CMD_0538(const uint8_t *pBuffer)//write
 }
 #endif
 
+#ifdef ENABLE_SERIAL_RC
+static void CMD_0830(const uint8_t *pBuffer) {
+    const CMD_0830_t *pCmd = (const CMD_0830_t *) pBuffer;
+    uint8_t ch = pCmd->Data.Channel;
+    if (ch > 1) return;
+
+    gEeprom.VfoInfo[ch].freq_config_RX.Frequency = pCmd->Data.Frequency / 10;
+    gEeprom.VfoInfo[ch].freq_config_RX.CodeType = pCmd->Data.RxToneType;
+    gEeprom.VfoInfo[ch].freq_config_RX.Code = pCmd->Data.RxToneCode;
+    
+    // Default TX to RX freq
+    gEeprom.VfoInfo[ch].freq_config_TX.Frequency = pCmd->Data.Frequency / 10;
+    gEeprom.VfoInfo[ch].freq_config_TX.CodeType = pCmd->Data.TxToneType;
+    gEeprom.VfoInfo[ch].freq_config_TX.Code = pCmd->Data.TxToneCode;
+    
+    gEeprom.VfoInfo[ch].TX_OFFSET_FREQUENCY_DIRECTION = pCmd->Data.TxOffsetDir;
+    gEeprom.VfoInfo[ch].TX_OFFSET_FREQUENCY = pCmd->Data.TxOffsetFreq / 10;
+    
+    gEeprom.VfoInfo[ch].CHANNEL_BANDWIDTH = pCmd->Data.Bandwidth;
+    
+    // Update Band and Squelch settings for the new frequency
+    gEeprom.VfoInfo[ch].Band = FREQUENCY_GetBand(gEeprom.VfoInfo[ch].freq_config_RX.Frequency);
+    RADIO_ConfigureSquelchAndOutputPower(&gEeprom.VfoInfo[ch]);
+    
+    RADIO_ApplyOffset(&gEeprom.VfoInfo[ch]);
+    
+    // RADIO_ConfigureChannel(ch, VFO_CONFIGURE_ALL); // This reloads from EEPROM, avoid it.
+    
+    if(gEeprom.RX_VFO == ch) {
+        RADIO_SetupRegisters(true);
+    }
+}
+
+static void CMD_0831(const uint8_t *pBuffer) {
+    const CMD_0831_t *pCmd = (const CMD_0831_t *) pBuffer;
+    REPLY_0831_t Reply;
+    uint8_t ch = pCmd->Data.Channel;
+    if (ch > 1) return;
+    
+    Reply.Header.ID = 0x0832;
+    Reply.Header.Size = sizeof(Reply.Data);
+    Reply.Data.Channel = ch;
+    Reply.Data.Frequency = gEeprom.VfoInfo[ch].freq_config_RX.Frequency * 10;
+    Reply.Data.RxToneType = gEeprom.VfoInfo[ch].freq_config_RX.CodeType;
+    Reply.Data.RxToneCode = gEeprom.VfoInfo[ch].freq_config_RX.Code;
+    
+    Reply.Data.TxToneType = gEeprom.VfoInfo[ch].freq_config_TX.CodeType;
+    Reply.Data.TxToneCode = gEeprom.VfoInfo[ch].freq_config_TX.Code;
+    
+    Reply.Data.TxOffsetDir = gEeprom.VfoInfo[ch].TX_OFFSET_FREQUENCY_DIRECTION;
+    Reply.Data.TxOffsetFreq = gEeprom.VfoInfo[ch].TX_OFFSET_FREQUENCY * 10;
+    
+    Reply.Data.Bandwidth = gEeprom.VfoInfo[ch].CHANNEL_BANDWIDTH;
+    
+    SendReply(&Reply, sizeof(Reply));
+}
+
+static void CMD_0840(const uint8_t *pBuffer) {
+    const CMD_0840_t *pCmd = (const CMD_0840_t *) pBuffer;
+    
+    // Clear Serial Config countdown to allow TX immediately
+    gSerialConfigCountDown_500ms = 0;
+    
+    if (pCmd->Data.PttState) {
+        if(gCurrentFunction != FUNCTION_TRANSMIT) {
+             RADIO_PrepareTX();
+        }
+    } else {
+        if(gCurrentFunction == FUNCTION_TRANSMIT) {
+            RADIO_SendEndOfTransmission();
+            
+            // Force state back to foreground to correct UI and internal state
+            // RADIO_SendEndOfTransmission -> RADIO_SetupRegisters(false) does not update gCurrentFunction
+            FUNCTION_Select(FUNCTION_FOREGROUND);
+            
+            gUpdateDisplay = true;
+            gUpdateStatus = true;
+        }
+    }
+}
+#endif
+
 #ifdef ENABLE_DOCK
 static void CMD_0801(const uint8_t *pBuffer)
     {
@@ -679,6 +808,17 @@ void UART_HandleCommand(void) {
             CMD_0801(UART_Command.Buffer);
             break;
 
+#endif
+#ifdef ENABLE_SERIAL_RC
+        case 0x0830:
+            CMD_0830(UART_Command.Buffer);
+            break;
+        case 0x0831:
+            CMD_0831(UART_Command.Buffer);
+            break;
+        case 0x0840:
+            CMD_0840(UART_Command.Buffer);
+            break;
 #endif
         case 0x0514:
             CMD_0514(UART_Command.Buffer);
