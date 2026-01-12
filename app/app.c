@@ -1009,6 +1009,7 @@ static void CheckKeys(void) {
         } else
             gPttDebounceCounter = 0;
     } else if (!GPIO_CheckBit(&GPIOC->DATA, GPIOC_PIN_PTT) && !SerialConfigInProgress()) {    // PTT pressed
+#ifndef ENABLE_SERIAL_RC
         if (++gPttDebounceCounter >= 3)        // 30ms
         {    // start transmitting
             boot_counter_10ms = 0;
@@ -1016,6 +1017,7 @@ static void CheckKeys(void) {
             gPttIsPressed = true;
             ProcessKey(KEY_PTT, true, false);
         }
+#endif
     } else
         gPttDebounceCounter = 0;
 
