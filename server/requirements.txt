@@ -7,3 +7,4 @@ aiortc
 pyaudio
 numpy
 av
+cryptography

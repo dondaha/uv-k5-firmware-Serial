@@ -4,7 +4,10 @@ from radio_manager import RadioManager
 import asyncio
 from pydantic import BaseModel
 import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from webrtc_manager import WebRTCManager
+from typing import Optional
 
 app = FastAPI(title="UV-K5 Remote Radio Node")
 radio = RadioManager()
@@ -42,8 +45,8 @@ class MonitorConfig(BaseModel):
 class RTCRequest(BaseModel):
     sdp: str
     type: str
-    input_device_index: int = None
-    output_device_index: int = None
+    input_device_index: Optional[int] = None
+    output_device_index: Optional[int] = None
 
 @app.get("/api/audio/devices")
 async def get_audio_devices():
@@ -174,7 +177,26 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"WebSocket error: {e}")
 
+# ======= 挂载前端静态文件 =======
+# 确保在API定义之后挂载，否则路由可能会被覆盖拦截
+if os.path.exists(os.path.join(os.path.dirname(__file__), "static")):
+    app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
+
+@app.get("/")
+async def serve_frontend():
+    """访问根目录时直接返回前端 Vue 页面"""
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
+
 if __name__ == "__main__":
     import uvicorn
-    # 为了保证能对外访问，绑定在 0.0.0.0，双系统下开发也可在 localhost 访问
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    cert_file = os.path.join(os.path.dirname(__file__), "cert.pem")
+    key_file = os.path.join(os.path.dirname(__file__), "key.pem")
+    
+    # 自动探测是否有 HTTPS 证书，如果有则挂载 SSL 运行
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        print("🚀 检测到 SSL 证书，将以 HTTPS 模式启动！解决手机麦克风无法访问的问题。")
+        uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, 
+                    ssl_keyfile=key_file, ssl_certfile=cert_file)
+    else:
+        print("⚠️ 未检测到 SSL 证书，以普通 HTTP 模式启动（适合本机 localhost 测试）。")
+        uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

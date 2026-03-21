@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <!-- 优化针对手机用户的显示比例，禁止缩放以防双击放大屏幕 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>UV-K5 远程电台面板</title>
+    <!-- 引入 Tailwind CSS 快速搭建响应式界面 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Font Awesome 提供精美图标 -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- 引入 Vue 3 构建单页面应用 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        /* 防止手机端长按选中文字以及按钮默认的高亮 */
+        .no-select { user-select: none; -webkit-user-select: none; }
+        /* PTT 按下时的激进红色发光动画 */
+        .ptt-active { 
+            background-color: #ef4444 !important; 
+            box-shadow: 0 0 30px rgba(239, 68, 68, 0.8) !important;
+            border-color: #fca5a5 !important;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white font-sans h-screen flex flex-col no-select">
+    <!-- 整个内容被约束成手机的大小(max-w-md)，如果在PC上打开就像是居中显示一个手机界面 -->
+    <div id="app" class="flex-1 flex flex-col max-w-md mx-auto w-full bg-gray-800 shadow-2xl relative">
+        
+        <!-- === 顶部状态栏 === -->
+        <header class="bg-gray-950 p-4 shadow-md flex justify-between items-center z-10 border-b border-gray-700">
+            <div class="text-lg font-bold text-sky-400">
+                <i class="fas fa-broadcast-tower mr-2"></i> UV-K5 Web Node
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full" :class="connected ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'"></span>
+                <span class="text-xs text-gray-300 font-mono">{{ connected ? '连线正常' : '设备离线' }}</span>
+            </div>
+        </header>
+
+        <!-- === 主工作区 === -->
+        <div class="p-6 flex-1 flex flex-col overflow-y-auto">
+            
+            <!-- 场景1：未连接时，显示设置面板 -->
+            <div v-if="!connected" class="flex flex-col gap-5 mt-2 animate-fade-in">
+                <p class="text-sm text-gray-400 mb-2">请配置硬件接口参数：</p>
+                
+                <div class="p-4 bg-gray-700 rounded-xl shadow-inner border border-gray-600">
+                    <label class="block text-sm text-sky-400 font-bold mb-2"><i class="fas fa-plug w-5"></i> 控制串口 (Serial)</label>
+                    <select v-model="selectedPort" class="w-full bg-gray-900 border border-gray-500 rounded-lg p-3 text-white text-sm outline-none focus:border-sky-500">
+                        <option v-for="p in ports" :value="p.device">{{ p.device }} ({{ p.description }})</option>
+                    </select>
+                </div>
+                
+                <div class="p-4 bg-gray-700 rounded-xl shadow-inner border border-gray-600">
+                    <label class="block text-sm text-emerald-400 font-bold mb-2"><i class="fas fa-headphones w-5"></i> 拾音通道 (电台声音去哪读)</label>
+                    <select v-model="audioInput" class="w-full bg-gray-900 border border-gray-500 rounded-lg p-3 text-white text-sm outline-none focus:border-emerald-500">
+                        <option :value="null">系统默认麦克风 / 声卡</option>
+                        <option v-for="d in audioDevices.filter(x=>x.max_input_channels>0)" :value="d.index">{{ d.index }}: {{ d.name }}</option>
+                    </select>
+                </div>
+                
+                <div class="p-4 bg-gray-700 rounded-xl shadow-inner border border-gray-600">
+                    <label class="block text-sm text-purple-400 font-bold mb-2"><i class="fas fa-microphone w-5"></i> 播音通道 (网页声音发给谁)</label>
+                    <select v-model="audioOutput" class="w-full bg-gray-900 border border-gray-500 rounded-lg p-3 text-white text-sm outline-none focus:border-purple-500">
+                        <option :value="null">系统默认扬声器 / 声卡</option>
+                        <option v-for="d in audioDevices.filter(x=>x.max_output_channels>0)" :value="d.index">{{ d.index }}: {{ d.name }}</option>
+                    </select>
+                </div>
+
+                <button @click="connectDevice" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-4 rounded-xl mt-4 transition-all shadow-lg active:scale-95">
+                    建立连接 (CONNECT)
+                </button>
+            </div>
+
+            <!-- 场景2：已连接时，显示对讲机操作面板 -->
+            <div v-else class="flex flex-col h-full animate-fade-in">
+                
+                <!-- 拟物化 LCD 屏幕 -->
+                <div class="bg-gray-800 border-[3px] border-gray-600 rounded-xl p-5 mb-6 shadow-inner relative overflow-hidden">
+                    <!-- 反光特效 -->
+                    <div class="absolute inset-0 bg-gradient-to-tr from-sky-400/5 to-transparent pointer-events-none"></div>
+                    
+                    <div class="flex justify-between items-start mb-2 relative z-10">
+                        <div class="bg-sky-600 text-white text-xs font-black px-2 py-1 rounded">VFO {{ activeChannel === 0 ? 'A' : 'B' }}</div>
+                        <div class="flex gap-3 text-xs font-bold font-mono">
+                            <!-- 监听状态指示灯 (Moni) -->
+                            <span v-if="monitorOn" class="text-orange-400 blink"><i class="fas fa-eye"></i> MONI</span>
+                            <!-- 发射指示灯 (TX) -->
+                            <span v-if="isPtt" class="text-red-500 tracking-widest"><i class="fas fa-wave-square"></i> TX</span>
+                            <span v-else class="text-gray-500">RX</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 频率主显示 / 格式化出好看的小数点 -->
+                    <div class="text-center font-mono text-[2.75rem] font-bold tracking-widest text-sky-100 drop-shadow-[0_0_8px_rgba(56,189,248,0.5)] my-6 relative z-10 leading-none">
+                        {{ formatFreq(channels[activeChannel]?.frequency) }}
+                        <span class="text-xl text-sky-400 absolute bottom-0 -right-2">MHz</span>
+                    </div>
+                    
+                    <!-- 信号强度条区 (暂时屏蔽)
+                    <div class="mt-4 flex items-center gap-3 relative z-10 bg-gray-900/50 p-2 rounded-lg">
+                        <span class="text-[0.65rem] font-bold text-gray-400 w-6">SIG</span>
+                        <div class="flex-1 h-3 bg-gray-900 rounded-full overflow-hidden border border-gray-700 flex p-[1px]">
+                            <div class="h-full rounded-[2px] transition-all duration-75" 
+                                 :class="rssiPercent > 70 ? 'bg-green-500' : (rssiPercent > 30 ? 'bg-yellow-400' : 'bg-red-500')"
+                                 :style="{width: rssiPercent + '%'}"></div>
+                        </div>
+                        <span class="text-[0.65rem] font-mono text-gray-400 w-10 text-right">{{ rssi }}<br>dBm</span>
+                    </div>
+                    -->
+                </div>
+
+                <!-- WebRTC 状态及控制区 2x2网格 -->
+                <div class="grid grid-cols-2 gap-3 mb-auto">
+                    <!-- WebRTC 通话状态 -->
+                    <div class="col-span-2 bg-gray-700/50 rounded-xl p-3 flex justify-between items-center text-sm border border-gray-600">
+                        <span class="text-gray-300"><i class="fas fa-satellite-dish mr-2"></i>实时语音流</span>
+                        <span v-if="rtcConnected" class="text-green-400 font-bold"><i class="fas fa-link mr-1"></i> 已导通</span>
+                        <span v-else class="text-yellow-500 font-bold blink"><i class="fas fa-spinner fa-spin mr-1"></i> 建立中...</span>
+                    </div>
+
+                    <!-- 按钮控制区域 -->
+                    <button @click="toggleActiveChannel" class="bg-gray-700 shadow border-b-2 border-gray-900 hover:bg-gray-600 active:scale-95 active:border-b-0 py-3 rounded-xl font-bold text-sm text-gray-200 transition-all flex flex-col items-center gap-1">
+                        <i class="fas fa-exchange-alt"></i> A/B 切换
+                    </button>
+                    
+                    <button @click="toggleMonitor" :class="monitorOn ? 'bg-orange-600 border-orange-800 text-white' : 'bg-gray-700 border-gray-900 text-gray-200'" class="shadow border-b-2 hover:brightness-110 active:scale-95 py-3 rounded-xl font-bold text-sm transition-all flex flex-col items-center gap-1">
+                        <i class="fas fa-headphones"></i> {{ monitorOn ? '取消监听' : '强行监听' }}
+                    </button>
+
+                    <div class="col-span-2 bg-gray-700/50 border border-gray-600 rounded-xl p-4 flex flex-col">
+                        <div class="flex justify-between text-xs font-bold text-gray-400 mb-2">
+                            <span>Squelch (静噪门限)</span>
+                            <span class="text-sky-400 px-2 bg-gray-900 rounded">{{ squelch }} 档</span>
+                        </div>
+                        <input type="range" min="0" max="9" v-model="squelch" @change="setSquelch" class="w-full accent-sky-500 cursor-pointer h-2 bg-gray-900 rounded-lg appearance-none">
+                    </div>
+                </div>
+
+                <!-- 隐藏的 Audio 标签用于播放电台传过来的声音 -->
+                <audio id="remoteAudio" autoplay playsinline class="hidden"></audio>
+
+                <!-- 巨型 PTT 按钮 (位于底部) -->
+                <div class="mt-8 mb-6 flex justify-center mt-auto">
+                    <!-- 绑定了所有的鼠标和触摸事件，确保松手100%停止发射 -->
+                    <button 
+                        @mousedown="startPtt" 
+                        @touchstart.prevent="startPtt"
+                        @mouseup="stopPtt" 
+                        @mouseleave="stopPtt"
+                        @touchend.prevent="stopPtt"
+                        @touchcancel.prevent="stopPtt"
+                        :class="[isPtt ? 'ptt-active' : 'bg-gray-800 hover:bg-gray-700 border-gray-900 shadow-[inset_0_4px_10px_rgba(255,255,255,0.1),_0_10px_20px_rgba(0,0,0,0.5)]']"
+                        class="w-36 h-36 rounded-full flex flex-col items-center justify-center border-[6px] transition-all select-none">
+                        
+                        <i class="fas" :class="[isPtt ? 'fa-bolt text-white text-5xl mb-2 drop-shadow-md' : 'fa-microphone text-sky-500 text-4xl mb-2']"></i>
+                        <span class="font-black text-xl tracking-widest" :class="isPtt ? 'text-white drop-shadow-md' : 'text-gray-400'">PUSH</span>
+                    </button>
+                </div>
+                <p class="text-center text-[0.6rem] text-gray-500">按住上方按钮通话</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 导入前端业务逻辑脚本 -->
+    <script src="/static/app.js"></script>
+    <style>
+        .blink { animation: blinker 1.5s linear infinite; }
+        @keyframes blinker { 50% { opacity: 0.3; } }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</body>
+</html>
