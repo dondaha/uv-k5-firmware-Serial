@@ -32,10 +32,36 @@ class UVK5Client:
             baud (int, optional): Baud rate. Defaults to 38400.
             debug (bool, optional): Enable debug logging. Defaults to False.
         """
-        self.ser = serial.Serial(port, baud, timeout=1)
+        self.port = port
+        self.baud = baud
         self.is_encrypted = True
         self.debug = debug
-    
+        self.ser = None
+        try:
+            self.ser = serial.Serial(self.port, self.baud, timeout=1, write_timeout=1)
+        except Exception as e:
+            print(f"Failed to open port {self.port}: {e}")
+            print("Trying to reconnect... Please unplug and replug the USB cable if needed.")
+            self.reconnect()
+
+    def reconnect(self):
+        """Automatically reconnect if the connection drops."""
+        print(f"Connection lost. Reconnecting to {self.port}...")
+        while True:
+            try:
+                if self.ser and self.ser.is_open:
+                    self.ser.close()
+            except Exception:
+                pass
+            
+            try:
+                self.ser = serial.Serial(self.port, self.baud, timeout=1, write_timeout=1)
+                print(f"Reconnected to {self.port} successfully.")
+                break
+            except Exception:
+                print(f"Failed to reconnect to {self.port}. Retrying in 1 second...")
+                time.sleep(1)
+
     def close(self):
         """Close the serial connection."""
         self.ser.close()
@@ -77,7 +103,14 @@ class UVK5Client:
         
         if self.debug:
             print(f"[TX] {frame.hex(' ')}")
-        self.ser.write(frame)
+            
+        while True:
+            try:
+                self.ser.write(frame)
+                break
+            except Exception as e:
+                print(f"Write error: {e}")
+                self.reconnect()
 
     def read_response(self):
         """
@@ -87,7 +120,13 @@ class UVK5Client:
             tuple: (cmd_id, data_bytes) or None if timeout/error.
         """
         # 1. Read Transport Header (4 bytes)
-        header_data = self.ser.read(4)
+        try:
+            header_data = self.ser.read(4)
+        except Exception as e:
+            print(f"Read error: {e}")
+            self.reconnect()
+            return None
+            
         if len(header_data) < 4:
             print("[RX] Timeout reading header")
             return None
@@ -102,14 +141,26 @@ class UVK5Client:
         # 2. Read Payload (payload_len)
         # Firmware SendReply does NOT include CRC.
         body_len = payload_len
-        encrypted_body = self.ser.read(body_len)
+        try:
+            encrypted_body = self.ser.read(body_len)
+        except Exception as e:
+            print(f"Read payload error: {e}")
+            self.reconnect()
+            return None
+            
         if len(encrypted_body) < body_len:
             if self.debug:
                 print("[RX] Incomplete Body")
             return None
 
         # 3. Read Footer (4 bytes: Padding + ID)
-        footer_data = self.ser.read(4)
+        try:
+            footer_data = self.ser.read(4)
+        except Exception as e:
+            print(f"Read footer error: {e}")
+            self.reconnect()
+            return None
+            
         if len(footer_data) < 4:
             if self.debug:
                 print("[RX] Incomplete Footer")
