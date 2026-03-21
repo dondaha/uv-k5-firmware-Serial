@@ -30,6 +30,7 @@
 #endif
 
 #include "app/uart.h"
+#include "app/action.h"
 #include "board.h"
 #include "bsp/dp32g030/dma.h"
 #include "bsp/dp32g030/gpio.h"
@@ -855,6 +856,52 @@ static void CMD_0851(const uint8_t *pBuffer) {
     Reply.Header.ID = 0x0852;
     Reply.Header.Size = sizeof(Reply.Data);
     Reply.Data.Channel = gEeprom.TX_VFO; // Return the Main VFO (TX)
+    
+    SendReply(&Reply, sizeof(Reply));
+}
+
+static void CMD_0860(const uint8_t *pBuffer) {
+    const CMD_0860_t *pCmd = (const CMD_0860_t *) pBuffer;
+    
+    if (pCmd->Data.SquelchLevel <= 9) {
+        gEeprom.SQUELCH_LEVEL = pCmd->Data.SquelchLevel;
+        SETTINGS_SaveSettings();
+        
+        RADIO_ConfigureSquelchAndOutputPower(gRxVfo);
+        RADIO_SetupRegisters(true);
+    }
+}
+
+static void CMD_0861(const uint8_t *pBuffer) {
+    REPLY_0861_t Reply;
+    
+    Reply.Header.ID = 0x0862;
+    Reply.Header.Size = sizeof(Reply.Data);
+    Reply.Data.SquelchLevel = gEeprom.SQUELCH_LEVEL;
+    
+    SendReply(&Reply, sizeof(Reply));
+}
+
+static void CMD_0862(const uint8_t *pBuffer) {
+    const CMD_0862_t *pCmd = (const CMD_0862_t *) pBuffer;
+    
+    if (pCmd->Data.MonitorState) {
+        if (gCurrentFunction != FUNCTION_MONITOR && gCurrentFunction != FUNCTION_TRANSMIT) {
+            ACTION_Monitor();
+        }
+    } else {
+        if (gCurrentFunction == FUNCTION_MONITOR) {
+            ACTION_Monitor();
+        }
+    }
+}
+
+static void CMD_0863(const uint8_t *pBuffer) {
+    REPLY_0863_t Reply;
+    
+    Reply.Header.ID = 0x0864;
+    Reply.Header.Size = sizeof(Reply.Data);
+    Reply.Data.MonitorState = (gCurrentFunction == FUNCTION_MONITOR) ? 1 : 0;
     
     SendReply(&Reply, sizeof(Reply));
 }

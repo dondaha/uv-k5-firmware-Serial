@@ -107,9 +107,30 @@ if __name__ == "__main__":
             print("[PASS] Squelch successfully set and read as 2.")
         else:
             print(f"[FAIL] Expected Squelch 2, got {sql_val}.")
-            
-        # Switch back to Channel A at end of test
-        client.set_active_channel(0)
+
+        time.sleep(1)
+
+        # 8. Test Monitor
+        print("Testing Monitor (Listen) mode...")
+        print("Enabling Monitor...")
+        client.set_monitor(True)
+        time.sleep(1)
+        mon_state = client.get_monitor()
+        if mon_state is True:
+            print("[PASS] Monitor successfully enabled.")
+        else:
+            print(f"[FAIL] Expected Monitor ON, got {mon_state}.")
+
+        time.sleep(2)
+
+        print("Disabling Monitor...")
+        client.set_monitor(False)
+        time.sleep(0.5)
+        mon_state = client.get_monitor()
+        if mon_state is False:
+            print("[PASS] Monitor successfully disabled.")
+        else:
+            print(f"[FAIL] Expected Monitor OFF, got {mon_state}.")
 
     except KeyboardInterrupt:
         print("\nAborted.")

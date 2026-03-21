@@ -101,6 +101,23 @@
 *   **Data**: 
     *   `SquelchLevel` (1 byte): 当前静噪等级 `0` 到 `9`。
 
+### 3.7 设置监听模式 (Monitor On/Off)
+*   **ID**: `0x0862`
+*   **总长度 (Size)**: 5 (Header 4 + Data 1)
+*   **Data**:
+    *   `MonitorState` (1 byte): 
+        *   `1`: 开启监听 (强制打开静噪)
+        *   `0`: 关闭监听 (恢复正常静噪)
+
+### 3.8 读取监听模式 (Get Monitor State)
+*   **ID**: `0x0863`
+*   **总长度 (Size)**: 4 (Header 4 + Data 0)
+
+**回复 (Reply)**:
+*   **ID**: `0x0864`
+*   **Data**: 
+    *   `MonitorState` (1 byte): `1` 为监听中，`0` 为未监听。
+
 ---
 
 ## 4. 通信示例 (Example)

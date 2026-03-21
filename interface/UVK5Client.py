@@ -340,3 +340,32 @@ class UVK5Client:
                 level = struct.unpack('<B', data)[0]
                 return level
         return None
+
+    def set_monitor(self, on):
+        """
+        Set the Monitor (Listen) mode state.
+
+        Args:
+            on (bool): True to enable monitor, False to disable.
+        """
+        print(f"Setting Monitor {'ON' if on else 'OFF'}...")
+        payload = struct.pack('<B', 1 if on else 0)
+        self.send_command(0x0862, payload)
+
+    def get_monitor(self):
+        """
+        Get the Monitor (Listen) mode state.
+
+        Returns:
+            bool: True if Monitor is on, False otherwise, or None if failed.
+        """
+        print("Reading Monitor state...")
+        self.send_command(0x0863, b'')
+        
+        resp = self.read_response()
+        if resp:
+            cmd_id, data = resp
+            if cmd_id == 0x0864:
+                state = struct.unpack('<B', data)[0]
+                return state == 1
+        return None
