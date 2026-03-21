@@ -369,3 +369,22 @@ class UVK5Client:
                 state = struct.unpack('<B', data)[0]
                 return state == 1
         return None
+
+    def get_rssi(self):
+        """
+        Get the current Received Signal Strength Indicator (RSSI) in dBm.
+
+        Returns:
+            int: RSSI value in dBm or None if failed.
+        """
+        print("Reading RSSI...")
+        self.send_command(0x0864, b'')
+        
+        resp = self.read_response()
+        if resp:
+            cmd_id, data = resp
+            if cmd_id == 0x0865:
+                # Unpack as signed 16-bit little-endian
+                rssi_dbm = struct.unpack('<h', data)[0]
+                return rssi_dbm
+        return None

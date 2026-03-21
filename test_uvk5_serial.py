@@ -132,6 +132,16 @@ if __name__ == "__main__":
         else:
             print(f"[FAIL] Expected Monitor OFF, got {mon_state}.")
 
+        time.sleep(1)
+
+        # 9. Test RSSI
+        print("Testing RSSI Base level...")
+        rssi_val = client.get_rssi()
+        if rssi_val is not None:
+            print(f"[PASS] Current RSSI is {rssi_val} dBm.")
+        else:
+            print("[FAIL] Failed to read RSSI.")
+
     except KeyboardInterrupt:
         print("\nAborted.")
     except Exception as e:

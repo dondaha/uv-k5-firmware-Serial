@@ -247,6 +247,17 @@ typedef struct {
         uint8_t MonitorState;
     } __attribute__((packed)) Data;
 } __attribute__((packed)) REPLY_0863_t;
+
+typedef struct {
+    Header_t Header;
+} __attribute__((packed)) CMD_0864_t;
+
+typedef struct {
+    Header_t Header;
+    struct {
+        int16_t RSSI_dBm;
+    } __attribute__((packed)) Data;
+} __attribute__((packed)) REPLY_0865_t;
 #endif
 
 #ifdef ENABLE_BLOCK
@@ -861,7 +872,7 @@ static void CMD_0851(const uint8_t *pBuffer) {
 }
 
 static void CMD_0860(const uint8_t *pBuffer) {
-    const CMD_0860_t *pCmd = (const CMD_0860_t *) pBuffer;
+    const CMD_0860_t *pCmd = (CMD_0860_t *) pBuffer;
     
     if (pCmd->Data.SquelchLevel <= 9) {
         gEeprom.SQUELCH_LEVEL = pCmd->Data.SquelchLevel;
@@ -902,6 +913,16 @@ static void CMD_0863(const uint8_t *pBuffer) {
     Reply.Header.ID = 0x0864;
     Reply.Header.Size = sizeof(Reply.Data);
     Reply.Data.MonitorState = (gCurrentFunction == FUNCTION_MONITOR) ? 1 : 0;
+    
+    SendReply(&Reply, sizeof(Reply));
+}
+
+static void CMD_0864(const uint8_t *pBuffer) {
+    REPLY_0865_t Reply;
+    
+    Reply.Header.ID = 0x0865;
+    Reply.Header.Size = sizeof(Reply.Data);
+    Reply.Data.RSSI_dBm = BK4819_GetRSSI_dBm();
     
     SendReply(&Reply, sizeof(Reply));
 }
@@ -965,6 +986,9 @@ void UART_HandleCommand(void) {
             break;
         case 0x0863:
             CMD_0863(UART_Command.Buffer);
+            break;
+        case 0x0864:
+            CMD_0864(UART_Command.Buffer);
             break;
 #endif
         case 0x0514:

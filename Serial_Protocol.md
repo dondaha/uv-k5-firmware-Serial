@@ -118,6 +118,15 @@
 *   **Data**: 
     *   `MonitorState` (1 byte): `1` 为监听中，`0` 为未监听。
 
+### 3.9 读取接收信号强度 (Get RSSI)
+*   **ID**: `0x0864`
+*   **总长度 (Size)**: 4 (Header 4 + Data 0)
+
+**回复 (Reply)**:
+*   **ID**: `0x0865`
+*   **Data**: 
+    *   `RSSI_dBm` (2 bytes, Signed 16-bit, Little Endian): 当前接收信号场强（单位 dBm），如 `-105`、`-80` 等。
+
 ---
 
 ## 4. 通信示例 (Example)
