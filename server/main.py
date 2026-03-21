@@ -4,9 +4,11 @@ from radio_manager import RadioManager
 import asyncio
 from pydantic import BaseModel
 import os
+from webrtc_manager import WebRTCManager
 
 app = FastAPI(title="UV-K5 Remote Radio Node")
 radio = RadioManager()
+rtc_manager = WebRTCManager()
 
 # 允许跨域请求（方便前后端分离调试）
 app.add_middleware(
@@ -36,6 +38,29 @@ class SquelchConfig(BaseModel):
 
 class MonitorConfig(BaseModel):
     on: bool
+
+class RTCRequest(BaseModel):
+    sdp: str
+    type: str
+    input_device_index: int = None
+    output_device_index: int = None
+
+@app.get("/api/audio/devices")
+async def get_audio_devices():
+    """获取所有可用的声卡设备列表"""
+    devices = rtc_manager.get_audio_devices()
+    return {"devices": devices}
+
+@app.post("/api/rtc/offer")
+async def rtc_offer(req: RTCRequest):
+    """WebRTC 专属握手通道 (SDP 打洞)"""
+    answer = await rtc_manager.handle_offer(
+        req.sdp, 
+        req.type, 
+        input_device_index=req.input_device_index,
+        output_device_index=req.output_device_index
+    )
+    return answer
 
 @app.get("/api/ports")
 async def get_ports():

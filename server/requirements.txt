@@ -3,3 +3,7 @@ uvicorn
 websockets
 pyserial
 pydantic
+aiortc
+pyaudio
+numpy
+av
