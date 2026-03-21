@@ -56,16 +56,24 @@ if __name__ == "__main__":
         time.sleep(0.5)
         
         # 5. Read back Channel B
-        client.get_channel(1)
+        ch_info = client.get_channel(1)
+        if ch_info and ch_info['frequency'] == 145500000:
+             print("[PASS] Channel B set correctly.")
+        else:
+             print(f"[FAIL] Channel B mismatch: {ch_info}")
         
         time.sleep(1)
         
-        # Ensure we are on Channel A before PTT test
+        # Test Channel Switch
         print("Switching to Channel B for PTT test...")
         client.set_active_channel(1)
         active_ch = client.get_active_channel()
         if active_ch != 1:
              print("[WARN] Failed to switch to Channel B?")
+        client.set_active_channel(0)
+        active_ch = client.get_active_channel()
+        if active_ch != 0:
+             print("[WARN] Failed to switch to Channel A?")
 
         time.sleep(1)
         
@@ -75,6 +83,33 @@ if __name__ == "__main__":
         time.sleep(2) # Transmit for 2 seconds
         client.set_ptt(False)
         print("PTT OFF.")
+
+        time.sleep(1)
+
+        # 7. Test Squelch
+        print("Testing Squelch...")
+        print("Setting Squelch to 0 (Monitor Open)...")
+        client.set_squelch(0)
+        time.sleep(0.5)
+        sql_val = client.get_squelch()
+        if sql_val == 0:
+            print("[PASS] Squelch successfully set and read as 0.")
+        else:
+            print(f"[FAIL] Expected Squelch 0, got {sql_val}.")
+
+        time.sleep(1)
+
+        print("Setting Squelch to 2...")
+        client.set_squelch(2)
+        time.sleep(0.5)
+        sql_val = client.get_squelch()
+        if sql_val == 2:
+            print("[PASS] Squelch successfully set and read as 2.")
+        else:
+            print(f"[FAIL] Expected Squelch 2, got {sql_val}.")
+            
+        # Switch back to Channel A at end of test
+        client.set_active_channel(0)
 
     except KeyboardInterrupt:
         print("\nAborted.")

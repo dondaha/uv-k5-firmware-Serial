@@ -210,6 +210,42 @@ typedef struct {
         uint8_t Channel;
     } __attribute__((packed)) Data;
 } __attribute__((packed)) REPLY_0851_t;
+
+typedef struct {
+    Header_t Header;
+    struct {
+        uint8_t SquelchLevel;
+    } __attribute__((packed)) Data;
+} __attribute__((packed)) CMD_0860_t;
+
+typedef struct {
+    Header_t Header;
+} __attribute__((packed)) CMD_0861_t;
+
+typedef struct {
+    Header_t Header;
+    struct {
+        uint8_t SquelchLevel;
+    } __attribute__((packed)) Data;
+} __attribute__((packed)) REPLY_0861_t;
+
+typedef struct {
+    Header_t Header;
+    struct {
+        uint8_t MonitorState;
+    } __attribute__((packed)) Data;
+} __attribute__((packed)) CMD_0862_t;
+
+typedef struct {
+    Header_t Header;
+} __attribute__((packed)) CMD_0863_t;
+
+typedef struct {
+    Header_t Header;
+    struct {
+        uint8_t MonitorState;
+    } __attribute__((packed)) Data;
+} __attribute__((packed)) REPLY_0863_t;
 #endif
 
 #ifdef ENABLE_BLOCK
@@ -870,6 +906,18 @@ void UART_HandleCommand(void) {
             break;
         case 0x0851:
             CMD_0851(UART_Command.Buffer);
+            break;
+        case 0x0860:
+            CMD_0860(UART_Command.Buffer);
+            break;
+        case 0x0861:
+            CMD_0861(UART_Command.Buffer);
+            break;
+        case 0x0862:
+            CMD_0862(UART_Command.Buffer);
+            break;
+        case 0x0863:
+            CMD_0863(UART_Command.Buffer);
             break;
 #endif
         case 0x0514:

@@ -86,6 +86,21 @@
         *   `1`: 按下 PTT (开始发射)
         *   `0`: 松开 PTT (停止发射/回到接收)
 
+### 3.5 设置全局静噪等级 (Set Squelch Level)
+*   **ID**: `0x0860`
+*   **总长度 (Size)**: 5 (Header 4 + Data 1)
+*   **Data**:
+    *   `SquelchLevel` (1 byte): `0` (关闭) 到 `9`。
+
+### 3.6 读取全局静噪等级 (Get Squelch Level)
+*   **ID**: `0x0861`
+*   **总长度 (Size)**: 4 (Header 4 + Data 0)
+
+**回复 (Reply)**:
+*   **ID**: `0x0862`
+*   **Data**: 
+    *   `SquelchLevel` (1 byte): 当前静噪等级 `0` 到 `9`。
+
 ---
 
 ## 4. 通信示例 (Example)

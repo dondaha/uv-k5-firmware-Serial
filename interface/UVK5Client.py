@@ -307,3 +307,36 @@ class UVK5Client:
                 ch = struct.unpack('<B', data)[0]
                 return ch
         return None
+
+    def set_squelch(self, level):
+        """
+        Set the global Squelch level.
+
+        Args:
+            level (int): Squelch level (0-9).
+        """
+        if level < 0 or level > 9:
+            print("Squelch level must be between 0 and 9.")
+            return
+
+        print(f"Setting Squelch level to {level}...")
+        payload = struct.pack('<B', level)
+        self.send_command(0x0860, payload)
+
+    def get_squelch(self):
+        """
+        Get the global Squelch level.
+
+        Returns:
+            int: Squelch level (0-9) or None if failed.
+        """
+        print("Reading Squelch level...")
+        self.send_command(0x0861, b'')
+        
+        resp = self.read_response()
+        if resp:
+            cmd_id, data = resp
+            if cmd_id == 0x0862:
+                level = struct.unpack('<B', data)[0]
+                return level
+        return None
