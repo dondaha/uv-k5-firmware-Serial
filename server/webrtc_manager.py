@@ -43,7 +43,9 @@ class AudioCaptureTrack(MediaStreamTrack):
     async def recv(self):
         if self._is_stopped:
             # 停止后抛出异常以结束任务
-            raise av.AudioFrameError("Track is stopped")
+            # aiortc 需要 MediaStreamError 来正常停止轨道的拉取
+            import aiortc.mediastreams
+            raise aiortc.mediastreams.MediaStreamError("Track is stopped")
             
         if not self.stream:
             # 如果音频设备打开失败，发送空静音包，防止 WebRTC 卡死
@@ -111,16 +113,37 @@ class WebRTCManager:
             if pc.connectionState == "failed" or pc.connectionState == "closed":
                 await pc.close()
                 self.pcs.discard(pc)
-                # 清理当前的麦克风占用
+                # 清理当前的麦克风和扬声器占用
                 if self.current_audio_track:
                     self.current_audio_track.stop()
                     self.current_audio_track = None
+                if self.output_stream:
+                    try:
+                        self.output_stream.stop_stream()
+                        self.output_stream.close()
+                    except Exception:
+                        pass
+                    self.output_stream = None
+
+        # 0. 防止声卡被旧的 WebRTCTrack 锁住
+        # 在接受新 Offer 之前，只要发现还在录音，强行清理旧资源！并稍微睡一下让 ALSA 释放
+        if self.current_audio_track:
+            logger.info("Cleaning up previous audio recording track before opening new one...")
+            self.current_audio_track.stop()
+            self.current_audio_track = None
+            await asyncio.sleep(0.5)
+            
+        if self.output_stream:
+            logger.info("Cleaning up previous audio output stream...")
+            try:
+                self.output_stream.stop_stream()
+                self.output_stream.close()
+            except Exception:
+                pass
+            self.output_stream = None
+            await asyncio.sleep(0.2)
 
         # 1. 向浏览器发送音频 (电台接收到的声音)
-        # 先清理掉残留的上次连接的轨道
-        if self.current_audio_track:
-            self.current_audio_track.stop()
-            
         audio_track = AudioCaptureTrack(input_device_index=input_device_index)
         self.current_audio_track = audio_track
         pc.addTrack(audio_track)
