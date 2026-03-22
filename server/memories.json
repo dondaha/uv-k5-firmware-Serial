@@ -1,0 +1,15 @@
+[
+  {
+    "id": "2300efb4-6abc-4e78-a1bb-13ddaf3ad2c1",
+    "name": "应急通信",
+    "freq_hz": 438500000,
+    "tx_off_dir": 0,
+    "tx_off_freq": 0,
+    "bw": 0,
+    "rx_tone_type": 0,
+    "rx_tone_code": 0,
+    "tx_tone_type": 0,
+    "tx_tone_code": 0,
+    "power": 0
+  }
+]

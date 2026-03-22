@@ -4,10 +4,12 @@ from radio_manager import RadioManager
 import asyncio
 from pydantic import BaseModel
 import os
+import json
+import uuid
+from typing import Optional, List
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from webrtc_manager import WebRTCManager
-from typing import Optional
 
 app = FastAPI(title="UV-K5 Remote Radio Node")
 radio = RadioManager()
@@ -47,6 +49,34 @@ class RTCRequest(BaseModel):
     type: str
     input_device_index: Optional[int] = None
     output_device_index: Optional[int] = None
+
+class MemoryChannel(BaseModel):
+    id: Optional[str] = None
+    name: str
+    freq_hz: int
+    tx_off_dir: int
+    tx_off_freq: int
+    bw: int
+    rx_tone_type: int
+    rx_tone_code: int
+    tx_tone_type: int
+    tx_tone_code: int
+    power: int
+
+MEMORIES_FILE = os.path.join(os.path.dirname(__file__), "memories.json")
+
+def load_memories():
+    if not os.path.exists(MEMORIES_FILE):
+        return []
+    try:
+        with open(MEMORIES_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def save_memories(data):
+    with open(MEMORIES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 @app.get("/api/audio/devices")
 async def get_audio_devices():
@@ -149,6 +179,59 @@ async def set_monitor(config: MonitorConfig):
     success = await radio.set_monitor(config.on)
     if not success:
         raise HTTPException(status_code=400, detail="Failed to set monitor")
+    return {"status": "success"}
+
+@app.get("/api/memories")
+async def get_memories():
+    return load_memories()
+
+@app.post("/api/memories")
+async def add_memory(mem: MemoryChannel):
+    mem.id = str(uuid.uuid4())
+    data = load_memories()
+    data.append(mem.model_dump())
+    save_memories(data)
+    return mem.model_dump()
+
+@app.put("/api/memories/{mem_id}")
+async def update_memory(mem_id: str, mem: MemoryChannel):
+    data = load_memories()
+    for idx, item in enumerate(data):
+        if item.get('id') == mem_id:
+            mem.id = mem_id
+            data[idx] = mem.model_dump()
+            save_memories(data)
+            return data[idx]
+    raise HTTPException(status_code=404, detail="Memory not found")
+
+@app.delete("/api/memories/{mem_id}")
+async def delete_memory(mem_id: str):
+    data = load_memories()
+    filtered = [item for item in data if item.get('id') != mem_id]
+    if len(filtered) == len(data):
+        raise HTTPException(status_code=404, detail="Memory not found")
+    save_memories(filtered)
+    return {"status": "success"}
+
+@app.post("/api/memories/{mem_id}/apply")
+async def apply_memory(mem_id: str):
+    data = load_memories()
+    memory = next((item for item in data if item.get('id') == mem_id), None)
+    if not memory:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    
+    active_ch = await radio.get_active_channel()
+    if active_ch is None:
+        raise HTTPException(status_code=400, detail="Radio disconnected")
+    
+    success = await radio.set_channel(
+        active_ch,
+        memory['freq_hz'], memory['tx_off_dir'], memory['tx_off_freq'],
+        memory['bw'], memory['rx_tone_type'], memory['rx_tone_code'],
+        memory['tx_tone_type'], memory['tx_tone_code'], memory['power']
+    )
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to apply memory to radio")
     return {"status": "success"}
 
 @app.websocket("/ws/control")

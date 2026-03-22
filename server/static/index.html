@@ -128,6 +128,10 @@
                         <i class="fas fa-headphones"></i> {{ monitorOn ? '取消监听' : '强行监听' }}
                     </button>
 
+                    <button @click="openMemories" class="col-span-2 bg-gray-700 shadow border-b-2 border-gray-900 hover:bg-gray-600 active:scale-95 py-3 rounded-xl font-bold text-sm text-sky-400 transition-all flex flex-col items-center gap-1 text-base">
+                        <span><i class="fas fa-book mr-1"></i> 频率频道管理 (Memories)</span>
+                    </button>
+
                     <div class="col-span-2 bg-gray-700/50 border border-gray-600 rounded-xl p-4 flex flex-col">
                         <div class="flex justify-between text-xs font-bold text-gray-400 mb-2">
                             <span>Squelch (静噪门限)</span>
@@ -160,6 +164,130 @@
                 <p class="text-center text-[0.6rem] text-gray-500">按住上方按钮通话</p>
             </div>
         </div>
+
+        <!-- === 频道列表 抽屉弹窗 === -->
+        <div v-if="showMemories" class="absolute inset-0 bg-gray-900/95 z-50 flex flex-col animate-fade-in backdrop-blur-md">
+            <div class="p-4 bg-gray-950 flex justify-between items-center border-b border-gray-700 sticky top-0">
+                <h3 class="text-white font-bold"><i class="fas fa-book text-sky-400"></i> 频道列表</h3>
+                <button @click="showMemories = false" class="text-gray-400 p-2"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 space-y-3">
+                <div v-if="memories.length === 0" class="text-center text-gray-500 mt-10 text-sm">
+                    暂无保存的频道，点击下方新建。
+                </div>
+                <div v-for="mem in memories" :key="mem.id" class="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow flex justify-between items-center group">
+                    <div class="flex-1 cursor-pointer" @click="applyMemory(mem)">
+                        <div class="font-bold text-sky-300 text-lg">{{ mem.name }}</div>
+                        <div class="text-sm font-mono text-gray-300 flex items-center gap-2 mt-1">
+                            {{ formatFreq(mem.freq_hz) }}
+                            <span v-if="mem.tx_off_dir !== 0" class="text-[0.6rem] bg-gray-700 px-1 rounded">{{ mem.tx_off_dir === 1 ? '+' : '-' }}{{ formatFreq(mem.tx_off_freq) }}</span>
+                            <span v-if="mem.rx_tone_type !== 0" class="text-xs text-orange-400" title="接收亚音"><i class="fas fa-lock"></i></span>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <!-- 点击直接立即上机 -->
+                        <button @click="applyMemory(mem)" class="w-10 h-10 rounded-full bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40 transition">
+                            <i class="fas fa-play"></i>
+                        </button>
+                        <!-- 打开编辑 -->
+                        <button @click="editMemory(mem)" class="w-10 h-10 rounded-full bg-gray-700 text-gray-300 hover:bg-gray-600 transition">
+                            <i class="fas fa-cog"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 bg-gray-900 border-t border-gray-800">
+                <button @click="createMemory" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-3 rounded-xl transition-all shadow text-sm">
+                    <i class="fas fa-plus"></i> 新增频道
+                </button>
+            </div>
+        </div>
+
+        <!-- === 频道编辑 抽屉弹窗 === -->
+        <div v-if="showEditor" class="absolute inset-0 bg-gray-900 z-[60] flex flex-col animate-fade-in overflow-y-auto">
+            <div class="p-4 bg-gray-950 flex justify-between items-center sticky top-0 z-10 border-b border-gray-700">
+                <h3 class="text-white font-bold">{{ memoryForm.id ? '编辑频道' : '新增频道' }}</h3>
+                <button @click="showEditor = false" class="text-gray-400 p-2"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            
+            <div class="p-5 space-y-4 flex-1">
+                <div>
+                    <label class="block text-xs text-sky-400 mb-1">频道名称 (Name)</label>
+                    <input type="text" v-model="memoryForm.name" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white outline-none focus:border-sky-500" placeholder="例如: 当地中继">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="col-span-2">
+                        <label class="block text-xs text-sky-400 mb-1">接收频率 (RX MHz)</label>
+                        <input type="number" step="0.0001" v-model.number="memoryForm.freq_mhz" class="w-full bg-gray-800 border-gray-600 border rounded p-2 text-white outline-none" placeholder="439.5000">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">差频方向</label>
+                        <select v-model.number="memoryForm.tx_off_dir" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white outline-none">
+                            <option value="0">无 (同频)</option>
+                            <option value="1">正差 (+)</option>
+                            <option value="2">负差 (-)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">频差值 (MHz)</label>
+                        <input type="number" step="0.0001" v-model.number="memoryForm.tx_off_freq_mhz" :disabled="memoryForm.tx_off_dir===0" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white outline-none disabled:opacity-50">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">发射功率</label>
+                        <select v-model.number="memoryForm.power" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white outline-none">
+                            <option value="0">Low (低)</option>
+                            <option value="1">Mid (中)</option>
+                            <option value="2">High (高)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">带宽</label>
+                        <select v-model.number="memoryForm.bw" class="w-full bg-gray-800 border border-gray-600 rounded p-2 text-white outline-none">
+                            <option value="0">Wide (宽带)</option>
+                            <option value="1">Narrow (窄带)</option>
+                        </select>
+                    </div>
+
+                    <!-- 亚音设置区 -->
+                    <div class="col-span-2 border border-gray-700 bg-gray-800/50 p-3 rounded-lg mt-2">
+                        <label class="block text-xs text-orange-400 mb-2 border-b border-gray-700 pb-1">接收亚音 (RX Tone)</label>
+                        <div class="grid grid-cols-2 gap-2 mb-3">
+                            <select v-model.number="memoryForm.rx_tone_type" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-xs outline-none">
+                                <option value="0">关闭</option><option value="1">CTCSS</option>
+                                <option value="2">DCS 正相</option><option value="3">DCS 反相</option>
+                            </select>
+                            <select v-if="memoryForm.rx_tone_type !== 0" v-model.number="memoryForm.rx_tone_code" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-xs outline-none">
+                                <option v-for="(tone, idx) in availableTones(memoryForm.rx_tone_type)" :value="idx">{{ tone }}</option>
+                            </select>
+                        </div>
+                        
+                        <label class="block text-xs text-red-400 mb-2 border-b border-gray-700 pb-1">发射亚音 (TX Tone)</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <select v-model.number="memoryForm.tx_tone_type" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-xs outline-none">
+                                <option value="0">关闭</option><option value="1">CTCSS</option>
+                                <option value="2">DCS 正相</option><option value="3">DCS 反相</option>
+                            </select>
+                            <select v-if="memoryForm.tx_tone_type !== 0" v-model.number="memoryForm.tx_tone_code" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-xs outline-none">
+                                <option v-for="(tone, idx) in availableTones(memoryForm.tx_tone_type)" :value="idx">{{ tone }}</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pt-6 flex gap-3">
+                    <button @click="saveMemory" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold shadow">
+                        保存并关闭
+                    </button>
+                    <button v-if="memoryForm.id" @click="deleteMemory(memoryForm.id)" class="px-5 bg-red-900/50 text-red-400 border border-red-800 hover:bg-red-800 hover:text-white py-3 rounded-lg font-bold">
+                        删除
+                    </button>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <!-- 导入前端业务逻辑脚本 -->
