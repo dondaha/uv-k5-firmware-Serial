@@ -14,9 +14,10 @@ class AudioCaptureTrack(MediaStreamTrack):
     """
     kind = "audio"
 
-    def __init__(self, input_device_index=None):
+    def __init__(self, input_device_index=None, pyaudio_instance=None):
         super().__init__()
-        self.p = pyaudio.PyAudio()
+        # Use shared pyaudio instance instead of creating a new one
+        self.p = pyaudio_instance if pyaudio_instance else pyaudio.PyAudio()
         self.rate = 48000
         # 20ms 一帧，WebRTC 常见的音频打包长度
         self.chunk = int(self.rate * 0.02) 
@@ -72,12 +73,16 @@ class AudioCaptureTrack(MediaStreamTrack):
     def stop(self):
         super().stop()
         self._is_stopped = True
-        if self.stream:
-            self.stream.stop_stream()
-            self.stream.close()
-            self.stream = None
-            logger.info(f"Audio input stream on device {self._input_device_index} closed")
-        self.p.terminate()
+        try:
+            if self.stream:
+                if not self.stream.is_stopped():
+                    self.stream.stop_stream()
+                self.stream.close()
+                self.stream = None
+                logger.info(f"Audio input stream closed")
+        except Exception as e:
+            logger.error(f"Error closing input stream: {e}")
+        # Never terminate the shared PyAudio instance here
 
 class WebRTCManager:
     """
@@ -85,9 +90,9 @@ class WebRTCManager:
     """
     def __init__(self):
         self.pcs = set()
-        self.p = pyaudio.PyAudio()
-        self.output_stream = None # 用于将浏览器的声音送入电台（MIC）
-        self.current_audio_track = None # 跟踪当前的录音轨迹
+        self.p = pyaudio.PyAudio() # Singleton instance
+        self.output_stream = None
+        self.current_audio_track = None
 
     def get_audio_devices(self):
         """获取系统所有的声卡列表，供前端选择 USB 声卡"""
@@ -113,45 +118,35 @@ class WebRTCManager:
             if pc.connectionState == "failed" or pc.connectionState == "closed":
                 await pc.close()
                 self.pcs.discard(pc)
-                # 注销这里的自动清理，交给 handle_offer 统一处理防止竞争
-                pass
 
-        # 0. 防止声卡被旧的 WebRTCTrack 锁住
-        # 在接受新 Offer 之前，只要发现还在录音，强行清理旧资源！并稍微睡一下让 ALSA 释放
         if self.current_audio_track:
-            logger.info("Cleaning up previous audio recording track before opening new one...")
+            logger.info("Cleaning up previous audio recording track...")
             self.current_audio_track.stop()
             self.current_audio_track = None
             await asyncio.sleep(0.5)
-            
-        if self.output_stream and not self.output_stream.is_stopped():
+
+        if self.output_stream:
             logger.info("Cleaning up previous audio output stream...")
             try:
-                self.output_stream.stop_stream()
+                if not self.output_stream.is_stopped():
+                    self.output_stream.stop_stream()
                 self.output_stream.close()
             except Exception as e:
                 logger.warning(f"Error during output stream cleanup: {e}")
             self.output_stream = None
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.5)
 
-        # 全局重启 PyAudio 实例（这是对付烂驱动最无敌的绝杀招）
-        if hasattr(self, 'p') and self.p is not None:
-            self.p.terminate()
-        self.p = pyaudio.PyAudio()
-        await asyncio.sleep(0.2)
-
-        # 1. 向浏览器发送音频 (电台接收到的声音)
-        audio_track = AudioCaptureTrack(input_device_index=input_device_index)
+        # Do NOT terminate PyAudio instance. Reuse self.p!
+        
+        audio_track = AudioCaptureTrack(input_device_index=input_device_index, pyaudio_instance=self.p)
         self.current_audio_track = audio_track
         pc.addTrack(audio_track)
 
-        # 2. 从浏览器接收音频 (我们要发送给电台的声音)
         @pc.on("track")
         def on_track(track):
             if track.kind == "audio":
                 logger.info("Received an audio track from browser")
-                
-                # 如果还没有打开输出流，则打开
+
                 if not self.output_stream:
                     try:
                         self.output_stream = self.p.open(
@@ -160,10 +155,9 @@ class WebRTCManager:
                             rate=48000,
                             output=True,
                             output_device_index=output_device_index,
-                            start=False # 延迟启动
+                            start=False
                         )
                         self.output_stream.start_stream()
-                        logger.info(f"Audio output stream opened on device {output_device_index}")
                     except Exception as e:
                         logger.error(f"Failed to open audio output: {e}")
 
