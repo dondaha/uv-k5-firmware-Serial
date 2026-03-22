@@ -118,6 +118,21 @@ class WebRTCManager:
             if pc.connectionState == "failed" or pc.connectionState == "closed":
                 await pc.close()
                 self.pcs.discard(pc)
+                # 立即释放音频设备，不要等到下一次连接，这样能避免底层缓冲区积压导致全是电流声
+                if self.current_audio_track:
+                    logger.info("Connection closed: cleaning up audio recording track...")
+                    self.current_audio_track.stop()
+                    self.current_audio_track = None
+                
+                if self.output_stream:
+                    logger.info("Connection closed: cleaning up audio output stream...")
+                    try:
+                        if not self.output_stream.is_stopped():
+                            self.output_stream.stop_stream()
+                        self.output_stream.close()
+                    except Exception as e:
+                        logger.warning(f"Error during output stream cleanup on close: {e}")
+                    self.output_stream = None
 
         if self.current_audio_track:
             logger.info("Cleaning up previous audio recording track...")
