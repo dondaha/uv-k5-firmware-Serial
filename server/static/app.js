@@ -148,15 +148,13 @@ const app = createApp({
                 }
             };
 
-            // 暂时关闭每 200ms 的 RSSI 轮询查询
-            /*
+            // 每 500ms (2Hz 刷新频率) 查询 RSSI
             setInterval(() => {
-                if (ws.readyState === WebSocket.OPEN && !isPtt.value) {
-                    // 发射期不查，否则串口冲突
+                if (ws && ws.readyState === WebSocket.OPEN && !isPtt.value) {
+                    // 发射期不查，否则会和 PTT 指令争抢串口
                     ws.send(JSON.stringify({ cmd: "get_rssi" }));
                 }
-            }, 200);
-            */
+            }, 500);
         };
 
         // ======= WebRTC (获取网页麦克风 + 播放电台来的声音) =======
@@ -356,10 +354,29 @@ const app = createApp({
             return ((v - (-130)) / 90) * 100;
         });
 
+        // 依据自定义的 S-Meter 换算 
+        const sMeterText = computed(() => {
+            const v = rssi.value;
+            if (v <= -121) return "S0";
+            if (v <= -115) return "S1";
+            if (v <= -109) return "S2";
+            if (v <= -103) return "S3";
+            if (v <= -97)  return "S4";
+            if (v <= -91)  return "S5";
+            if (v <= -85)  return "S6";
+            if (v <= -79)  return "S7";
+            if (v <= -73)  return "S8";
+            if (v <= -63)  return "S9";
+            
+            // S9 以上，以 -72dBm 为 S9 基准点计算超出值
+            const over = Math.round(v - (-72));
+            return `S9+${over}dB`;
+        });
+
         return {
             connected, rtcConnected, ports, audioDevices,
             selectedPort, audioInput, audioOutput,
-            channels, activeChannel, squelch, monitorOn, isPtt, rssi, rssiPercent,
+            channels, activeChannel, squelch, monitorOn, isPtt, rssi, rssiPercent, sMeterText,
             connectDevice, startPtt, stopPtt, toggleActiveChannel, toggleMonitor, setSquelch,
             formatFreq, showMemories, showEditor, memories, memoryForm,
             openMemories, createMemory, editMemory, saveMemory, deleteMemory, applyMemory, availableTones

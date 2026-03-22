@@ -92,22 +92,20 @@
                     </div>
                     
                     <!-- 频率主显示 / 格式化出好看的小数点 -->
-                    <div class="text-center font-mono text-[2.75rem] font-bold tracking-widest text-sky-100 drop-shadow-[0_0_8px_rgba(56,189,248,0.5)] my-6 relative z-10 leading-none">
+                    <div class="text-center font-mono text-[2.75rem] font-bold tracking-widest text-sky-100 drop-shadow-[0_0_8px_rgba(56,189,248,0.5)] mt-6 mb-8 relative z-10 leading-none">
+                        
+                        <!-- 左下角信号强度 S-Meter 显示 -->
+                        <div v-show="connected" class="absolute -bottom-8 left-0 flex items-baseline gap-2 tracking-normal text-left">
+                            <span class="font-sans font-black text-lg drop-shadow" 
+                                  :class="rssi >= -93 ? 'text-yellow-400' : 'text-green-400'">
+                                {{ sMeterText }}
+                            </span>
+                            <span class="text-gray-500 text-[0.65rem] font-mono">{{ rssi }} dBm</span>
+                        </div>
+
                         {{ formatFreq(channels[activeChannel]?.frequency) }}
                         <span class="text-xl text-sky-400 absolute -bottom-8 right-0">MHz</span>
                     </div>
-                    
-                    <!-- 信号强度条区 (暂时屏蔽)
-                    <div class="mt-4 flex items-center gap-3 relative z-10 bg-gray-900/50 p-2 rounded-lg">
-                        <span class="text-[0.65rem] font-bold text-gray-400 w-6">SIG</span>
-                        <div class="flex-1 h-3 bg-gray-900 rounded-full overflow-hidden border border-gray-700 flex p-[1px]">
-                            <div class="h-full rounded-[2px] transition-all duration-75" 
-                                 :class="rssiPercent > 70 ? 'bg-green-500' : (rssiPercent > 30 ? 'bg-yellow-400' : 'bg-red-500')"
-                                 :style="{width: rssiPercent + '%'}"></div>
-                        </div>
-                        <span class="text-[0.65rem] font-mono text-gray-400 w-10 text-right">{{ rssi }}<br>dBm</span>
-                    </div>
-                    -->
                 </div>
 
                 <!-- WebRTC 状态及控制区 2x2网格 -->
