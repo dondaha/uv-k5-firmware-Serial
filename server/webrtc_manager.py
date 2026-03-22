@@ -113,17 +113,8 @@ class WebRTCManager:
             if pc.connectionState == "failed" or pc.connectionState == "closed":
                 await pc.close()
                 self.pcs.discard(pc)
-                # 清理当前的麦克风和扬声器占用
-                if self.current_audio_track:
-                    self.current_audio_track.stop()
-                    self.current_audio_track = None
-                if self.output_stream:
-                    try:
-                        self.output_stream.stop_stream()
-                        self.output_stream.close()
-                    except Exception:
-                        pass
-                    self.output_stream = None
+                # 注销这里的自动清理，交给 handle_offer 统一处理防止竞争
+                pass
 
         # 0. 防止声卡被旧的 WebRTCTrack 锁住
         # 在接受新 Offer 之前，只要发现还在录音，强行清理旧资源！并稍微睡一下让 ALSA 释放
@@ -133,15 +124,21 @@ class WebRTCManager:
             self.current_audio_track = None
             await asyncio.sleep(0.5)
             
-        if self.output_stream:
+        if self.output_stream and not self.output_stream.is_stopped():
             logger.info("Cleaning up previous audio output stream...")
             try:
                 self.output_stream.stop_stream()
                 self.output_stream.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Error during output stream cleanup: {e}")
             self.output_stream = None
             await asyncio.sleep(0.2)
+
+        # 全局重启 PyAudio 实例（这是对付烂驱动最无敌的绝杀招）
+        if hasattr(self, 'p') and self.p is not None:
+            self.p.terminate()
+        self.p = pyaudio.PyAudio()
+        await asyncio.sleep(0.2)
 
         # 1. 向浏览器发送音频 (电台接收到的声音)
         audio_track = AudioCaptureTrack(input_device_index=input_device_index)
@@ -162,8 +159,10 @@ class WebRTCManager:
                             channels=1,
                             rate=48000,
                             output=True,
-                            output_device_index=output_device_index
+                            output_device_index=output_device_index,
+                            start=False # 延迟启动
                         )
+                        self.output_stream.start_stream()
                         logger.info(f"Audio output stream opened on device {output_device_index}")
                     except Exception as e:
                         logger.error(f"Failed to open audio output: {e}")
