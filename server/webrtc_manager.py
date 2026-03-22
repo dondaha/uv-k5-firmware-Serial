@@ -20,6 +20,9 @@ class AudioCaptureTrack(MediaStreamTrack):
         self.rate = 48000
         # 20ms 一帧，WebRTC 常见的音频打包长度
         self.chunk = int(self.rate * 0.02) 
+        self.stream = None
+        self._input_device_index = input_device_index
+        self._is_stopped = False
         
         try:
             self.stream = self.p.open(
@@ -38,6 +41,10 @@ class AudioCaptureTrack(MediaStreamTrack):
         self.pts = 0
 
     async def recv(self):
+        if self._is_stopped:
+            # 停止后抛出异常以结束任务
+            raise av.AudioFrameError("Track is stopped")
+            
         if not self.stream:
             # 如果音频设备打开失败，发送空静音包，防止 WebRTC 卡死
             await asyncio.sleep(0.02)
@@ -62,11 +69,13 @@ class AudioCaptureTrack(MediaStreamTrack):
 
     def stop(self):
         super().stop()
+        self._is_stopped = True
         if self.stream:
             self.stream.stop_stream()
             self.stream.close()
+            self.stream = None
+            logger.info(f"Audio input stream on device {self._input_device_index} closed")
         self.p.terminate()
-
 
 class WebRTCManager:
     """
@@ -76,6 +85,7 @@ class WebRTCManager:
         self.pcs = set()
         self.p = pyaudio.PyAudio()
         self.output_stream = None # 用于将浏览器的声音送入电台（MIC）
+        self.current_audio_track = None # 跟踪当前的录音轨迹
 
     def get_audio_devices(self):
         """获取系统所有的声卡列表，供前端选择 USB 声卡"""
@@ -101,9 +111,18 @@ class WebRTCManager:
             if pc.connectionState == "failed" or pc.connectionState == "closed":
                 await pc.close()
                 self.pcs.discard(pc)
+                # 清理当前的麦克风占用
+                if self.current_audio_track:
+                    self.current_audio_track.stop()
+                    self.current_audio_track = None
 
         # 1. 向浏览器发送音频 (电台接收到的声音)
+        # 先清理掉残留的上次连接的轨道
+        if self.current_audio_track:
+            self.current_audio_track.stop()
+            
         audio_track = AudioCaptureTrack(input_device_index=input_device_index)
+        self.current_audio_track = audio_track
         pc.addTrack(audio_track)
 
         # 2. 从浏览器接收音频 (我们要发送给电台的声音)

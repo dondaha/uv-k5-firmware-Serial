@@ -256,9 +256,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 
     except WebSocketDisconnect:
         print("WebSocket client disconnected")
+        # 安全脱离：如果网页强行关闭了，但是对讲机还在发射，我们赶快拉黑 PTT 防止烧管
+        await radio.set_ptt(False)
 
     except Exception as e:
         print(f"WebSocket error: {e}")
+        await radio.set_ptt(False)
 
 # ======= 挂载前端静态文件 =======
 # 确保在API定义之后挂载，否则路由可能会被覆盖拦截
