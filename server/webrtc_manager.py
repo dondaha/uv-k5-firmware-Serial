@@ -140,11 +140,8 @@ class WebRTCManager:
                                 if self.output_stream:
                                     # 将这段声音数据交给 PyAudio 去播放（实际上就进了 USB 声卡的麦克风发送给电台了）
                                     await asyncio.to_thread(self.output_stream.write, audio_bytes)
-                        except av.AVError:
-                            break
-                        except asyncio.CancelledError:
-                            break
                         except Exception as e:
+                            # 捕获所有由于断开连接引起的 track.recv() 异常 (包括 MediaStreamError)
                             logger.info(f"Track playback ended/error: {e}")
                             break
 
