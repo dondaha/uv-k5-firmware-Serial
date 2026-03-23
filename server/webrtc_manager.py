@@ -6,6 +6,7 @@ import av
 import fractions
 from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack
 from aiortc.mediastreams import MediaStreamError
+from config import load_config
 
 logger = logging.getLogger(__name__)
 
@@ -70,13 +71,16 @@ class WebRTCManager:
         if self.running:
             return
             
-        target_audio_name = "AB13X USB Audio"
+        conf = load_config()
+        target_audio_name = conf.get("audio_device", "AB13X USB Audio")
         forced_index = self.get_device_index_by_name(target_audio_name)
         
         if forced_index is not None:
             logger.info(f"Target Audio Device '{target_audio_name}' found at index {forced_index}. Forcing binding.")
         else:
-            logger.warning(f"Target Audio Device '{target_audio_name}' NOT found. Falling back to NONE/Default.")
+            logger.error(f"Target Audio Device '{target_audio_name}' NOT found. Exiting program to prevent unexpected behavior.")
+            import sys
+            sys.exit(1)
 
         # 启动输入流（麦克风->网页拾音）
         try:
@@ -91,6 +95,8 @@ class WebRTCManager:
             logger.info("Persistent Audio INPUT stream opened successfully.")
         except Exception as e:
             logger.error(f"Failed to open persistent audio input: {e}")
+            import sys
+            sys.exit(1)
 
         # 启动输出流（网页播音->扬声器）
         try:
@@ -105,6 +111,8 @@ class WebRTCManager:
             logger.info("Persistent Audio OUTPUT stream opened successfully.")
         except Exception as e:
             logger.error(f"Failed to open persistent audio output: {e}")
+            import sys
+            sys.exit(1)
 
         self.running = True
         
