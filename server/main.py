@@ -15,6 +15,15 @@ app = FastAPI(title="UV-K5 Remote Radio Node")
 radio = RadioManager()
 rtc_manager = WebRTCManager()
 
+@app.on_event("startup")
+async def startup_event():
+    # 程序启动时立即连接固定串口
+    from radio_manager import logger
+    logger.info("Auto-connecting to Radio on /dev/ttyUSB0...")
+    await radio.connect("/dev/ttyUSB0")
+    logger.info("Starting Persistent Audio Streams...")
+    await rtc_manager.start_audio_streams()
+
 # 允许跨域请求（方便前后端分离调试）
 app.add_middleware(
     CORSMiddleware,
@@ -116,8 +125,8 @@ async def connect_radio(req: ConnectRequest):
 
 @app.post("/api/disconnect")
 async def disconnect_radio():
-    await radio.disconnect()
-    return {"status": "disconnected"}
+    # await radio.disconnect()
+    return {"status": "Action restricted: Device is set to always connected."}
 
 @app.get("/api/channel/{channel_id}")
 async def get_channel(channel_id: int):

@@ -1,0 +1,4 @@
+{
+    "serial_port": "/dev/ttyUSB0",
+    "audio_device": "AB13X USB Audio"
+}

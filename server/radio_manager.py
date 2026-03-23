@@ -9,13 +9,15 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'i
 from UVK5Client import UVK5Client
 
 logging.basicConfig(level=logging.INFO)
+from config import load_config
+
 logger = logging.getLogger(__name__)
 
 class RadioManager:
     def __init__(self):
         self.client = None
-        # 根据系统设定默认端口，Windows 通常为 COMx，Linux 通常为 /dev/ttyUSB0
-        self.port = "COM11" if os.name == 'nt' else "/dev/ttyUSB0"
+        # 强制使用指定的控制串口
+        self.port = load_config().get("serial_port", "/dev/ttyUSB0")
         self.connected = False
         self.lock = asyncio.Lock() # 用于保护串口并发调用
 
