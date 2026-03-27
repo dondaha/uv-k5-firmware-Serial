@@ -290,8 +290,8 @@ if __name__ == "__main__":
     # 自动探测是否有 HTTPS 证书，如果有则挂载 SSL 运行
     if os.path.exists(cert_file) and os.path.exists(key_file):
         print("🚀 检测到 SSL 证书，将以 HTTPS 模式启动！解决手机麦克风无法访问的问题。")
-        uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, 
+        uvicorn.run("main:app", host="::", port=8000, reload=True, 
                     ssl_keyfile=key_file, ssl_certfile=cert_file)
     else:
         print("⚠️ 未检测到 SSL 证书，以普通 HTTP 模式启动（适合本机 localhost 测试）。")
-        uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+        uvicorn.run("main:app", host="::", port=8000, reload=True)
