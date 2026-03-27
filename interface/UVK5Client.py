@@ -106,6 +106,11 @@ class UVK5Client:
             
         while True:
             try:
+                # Flush the input buffer to clear any RF noise/garbage
+                # before we send a new command and expect a fresh response.
+                if self.ser.in_waiting > 0:
+                    self.ser.reset_input_buffer()
+                    
                 self.ser.write(frame)
                 break
             except Exception as e:
