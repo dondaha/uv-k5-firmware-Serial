@@ -73,7 +73,9 @@ class WebRTCManager:
             return
             
         conf = load_config()
-        target_audio_name = conf.get("audio_device", "AB13X USB Audio")
+        target_audio_name = conf.get("audio_device", "rockchip-rk809")
+        logger.info(f"选中了名为{target_audio_name}的声卡作为音频输入输出设备。")
+        # target_audio_name = conf.get("audio_device", "AB13X USB Audio")
         forced_index = self.get_device_index_by_name(target_audio_name)
         
         if forced_index is not None:
@@ -101,9 +103,10 @@ class WebRTCManager:
 
         # 启动输出流（网页播音->扬声器）
         try:
+            self.output_channels = 2  # 强制部分USB声卡使用双声道输出
             self.output_stream = self.p.open(
                 format=pyaudio.paInt16,
-                channels=1,
+                channels=self.output_channels,
                 rate=self.rate,
                 output=True,
                 output_device_index=forced_index,
@@ -161,9 +164,13 @@ class WebRTCManager:
 
     async def _spk_write_loop(self):
         """持续从接收队列读取发声数据并写入声卡；没人发声时发静音防断连"""
-        silence = b'\x00' * (self.chunk * 2)
+        silence = b'\x00' * (self.chunk * 2)  # mono silence
+        import time
+        last_log_time = time.time()
         while self.running:
+            # logger.info(f"{time.time()}读取循环进行中...")
             if not self.output_stream:
+                logger.info("Output stream not ready, waiting...")
                 await asyncio.sleep(0.02)
                 continue
 
@@ -171,11 +178,49 @@ class WebRTCManager:
                 try:
                     # 尝试从队列拿网页交来的发声数据，最长等 0.02s
                     audio_bytes = await asyncio.wait_for(self.tx_queue.get(), timeout=0.02)
+                    # logger.info(f"Writing actual audio chunks, size={len(audio_bytes)}")
+                    if time.time() - last_log_time > 1:
+                        logger.info(f"Writing actual audio chunks, size={len(audio_bytes)}")
+                        last_log_time = time.time()
                 except asyncio.TimeoutError:
                     # 如果这 0.02s 没人说话，填入静音维持心跳流
                     audio_bytes = silence
+                    # logger.info("Writing Silence chunk to maintain stream heartbeat.")
+                    if time.time() - last_log_time > 1:
+                        logger.info(f"Writing Silence chunk to maintain stream heartbeat.")
+                        last_log_time = time.time()
+                    
 
-                await asyncio.to_thread(self.output_stream.write, audio_bytes)
+                # 转换单声道音频为双声道
+                mono_data = np.frombuffer(audio_bytes, dtype=np.int16)
+                stereo_data = np.repeat(mono_data, 2)
+                
+                # 写入前检查底层声卡缓冲区余量，避免阻塞卡死
+                try:
+                    available_frames = self.output_stream.get_write_available()
+                    if available_frames >= self.chunk:
+                        await asyncio.to_thread(self.output_stream.write, stereo_data.tobytes())
+                        self._stall_counter = 0  # 恢复正常，计数清零
+                    else:
+                        # logger.warning(f"声卡播放缓冲区已满 (空闲: {available_frames} < 需写: {self.chunk})，主动丢弃音频帧防卡死！")
+                        if not hasattr(self, '_stall_counter'):
+                            self._stall_counter = 0
+                        self._stall_counter += 1
+                        
+                        # 如果连续卡死超过 1 次（约 0.02 秒），执行强制硬核复位输出流
+                        if self._stall_counter > 1:
+                            logger.error("检测到声卡输出流彻底假死，尝试强制复位输出物理通道...")
+                            try:
+                                self.output_stream.stop_stream()
+                                self.output_stream.start_stream()
+                                logger.info("输出物理通道强制复位完成！")
+                            except Exception as reset_e:
+                                logger.error(f"输出物理通道复位失败: {reset_e}")
+                            self._stall_counter = 0
+                            
+                except Exception as inner_e:
+                    logger.error(f"尝试检查或写入声卡异常: {inner_e}")
+
             except Exception as e:
                 logger.error(f"Spk write loop error: {e}")
                 await asyncio.sleep(0.02)
